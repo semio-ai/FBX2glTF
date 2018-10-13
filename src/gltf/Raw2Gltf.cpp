@@ -130,7 +130,6 @@ ModelData *Raw2Gltf(
 
     // for now, we only have one buffer; data->binary points to the same vector as that BufferData does.
     BufferData &buffer = *gltf->defaultBuffer;
-    
     {
         //
         // nodes
@@ -233,43 +232,6 @@ ModelData *Raw2Gltf(
             TextureData *emissiveTexture = simpleTex(RAW_TEXTURE_USAGE_EMISSIVE).get();
             TextureData *occlusionTexture = nullptr;
 
-            // acquire derived texture of single RawTextureUsage as *TextData, or nullptr if it doesn't exist
-            auto merge1Tex = [&](
-                const std::string tag,
-                RawTextureUsage usage,
-                const TextureBuilder::pixel_merger &combine,
-                bool outputHasAlpha
-                ) -> std::shared_ptr<TextureData> {
-                return textureBuilder.combine({ material.textures[usage] }, tag, combine, outputHasAlpha);
-            };
-
-            // acquire derived texture of two RawTextureUsage as *TextData, or nullptr if neither exists
-            auto merge2Tex = [&](
-                const std::string tag,
-                RawTextureUsage u1,
-                RawTextureUsage u2,
-                const TextureBuilder::pixel_merger &combine,
-                bool outputHasAlpha
-                ) -> std::shared_ptr<TextureData> {
-                return textureBuilder.combine(
-                    { material.textures[u1], material.textures[u2] },
-                    tag, combine, outputHasAlpha);
-            };
-
-            // acquire derived texture of two RawTextureUsage as *TextData, or nullptr if neither exists
-            auto merge3Tex = [&](
-                const std::string tag,
-                RawTextureUsage u1,
-                RawTextureUsage u2,
-                RawTextureUsage u3,
-                const TextureBuilder::pixel_merger &combine,
-                bool outputHasAlpha
-                ) -> std::shared_ptr<TextureData> {
-                return textureBuilder.combine(
-                    { material.textures[u1], material.textures[u2], material.textures[u3] },
-                    tag, combine, outputHasAlpha);
-            };
-
             std::shared_ptr<PBRMetallicRoughness> pbrMetRough;
             if (options.usePBRMetRough) {
                 // albedo is a basic texture, no merging needed
@@ -286,12 +248,18 @@ ModelData *Raw2Gltf(
                      */
                     RawMetRoughMatProps *props = (RawMetRoughMatProps *) material.info.get();
                     // merge metallic into the blue channel and roughness into the green, of a new combinatory texture
-                    aoMetRoughTex = merge3Tex("ao_met_rough",
-                        RAW_TEXTURE_USAGE_OCCLUSION, RAW_TEXTURE_USAGE_METALLIC, RAW_TEXTURE_USAGE_ROUGHNESS,
+                    aoMetRoughTex = textureBuilder.combine(
+                        {
+                            material.textures[RAW_TEXTURE_USAGE_OCCLUSION],
+                            material.textures[RAW_TEXTURE_USAGE_METALLIC],
+                            material.textures[RAW_TEXTURE_USAGE_ROUGHNESS],
+                        },
+                        "ao_met_rough",
                         [&](const std::vector<const TextureBuilder::pixel *> pixels) -> TextureBuilder::pixel {
                             return { {(*pixels[0])[0], (*pixels[2])[0], (*pixels[1])[0], 1} };
                         },
                         false);
+
                     baseColorTex      = simpleTex(RAW_TEXTURE_USAGE_ALBEDO);
                     diffuseFactor     = props->diffuseFactor;
                     metallic          = props->metallic;
@@ -322,19 +290,21 @@ ModelData *Raw2Gltf(
                         //   shininess 2 -> roughness ~0.7
                         //   shininess 6 -> roughness 0.5
                         //   shininess 16 -> roughness ~0.33
-
                         //   as shininess ==> oo, roughness ==> 0
                         auto getRoughness = [&](float shininess) {
                             return sqrtf(2.0f / (2.0f + shininess));
                         };
-                        aoMetRoughTex = merge1Tex("ao_met_rough",
-                            RAW_TEXTURE_USAGE_SHININESS,
+
+                        aoMetRoughTex = textureBuilder.combine(
+                            { material.textures[RAW_TEXTURE_USAGE_SHININESS], },
+                            "ao_met_rough",
                             [&](const std::vector<const TextureBuilder::pixel *> pixels) -> TextureBuilder::pixel {
                                 // do not multiply with props->shininess; that doesn't work like the other factors.
                                 float shininess = props->shininess * (*pixels[0])[0];
                                 return { {0, getRoughness(shininess), metallic, 1} };
                             },
                             false);
+
                         if (aoMetRoughTex != nullptr) {
                             // if we successfully built a texture, factors are just multiplicative identity
                             metallic = roughness = 1.0f;
@@ -440,9 +410,9 @@ ModelData *Raw2Gltf(
                 indexes.count = 3 * triangleCount;
                 primitive.reset(new PrimitiveData(indexes, mData, dracoMesh));
             } else {
-				const AccessorData &indexes = *gltf->AddAccessorWithView(
-					*gltf->GetAlignedBufferView(buffer, BufferViewData::GL_ELEMENT_ARRAY_BUFFER),
-					useLongIndices ? GLT_UINT : GLT_USHORT, getIndexArray(surfaceModel), std::string(""));
+                const AccessorData &indexes = *gltf->AddAccessorWithView(
+                    *gltf->GetAlignedBufferView(buffer, BufferViewData::GL_ELEMENT_ARRAY_BUFFER),
+                    useLongIndices ? GLT_UINT : GLT_USHORT, getIndexArray(surfaceModel), std::string(""));
                 primitive.reset(new PrimitiveData(indexes, mData));
             };
 
@@ -576,7 +546,6 @@ ModelData *Raw2Gltf(
         //
 
         for (int i = 0; i < raw.GetNodeCount(); i++) {
-
             const RawNode &node = raw.GetNode(i);
             auto nodeData = gltf->nodes.ptrs[i];
 
