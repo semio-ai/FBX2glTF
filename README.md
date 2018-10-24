@@ -1,5 +1,7 @@
 # FBX2glTF
 
+_This fork exports glTFs with Z up_
+
 This is a command line tool for converting 3D model assets on Autodesk's
 venerable [FBX](https://www.autodesk.com/products/fbx/overview) format to
 [glTF 2.0](https://github.com/KhronosGroup/glTF/tree/master/specification/2.0),
